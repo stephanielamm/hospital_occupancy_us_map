@@ -1,0 +1,85 @@
+---
+title: "pediatric_icu_beds_map"
+author: "Stephanie Lamm"
+date: "2022-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(readr)
+library(sf)
+library(tigris)
+library(viridis)
+library(cowplot)
+
+# for leaflet
+library(rgdal)
+library("leaflet")
+```
+
+## Download Data 
+Data obtained here: https://healthdata.gov/dataset/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/6xf2-c3ie 
+
+Data is updated daily. Not all hospitals report all information every day. Check the "coverage" field to see the number of hospitals that reported data for that day. i.e. "inpatient_beds_coverage" is the number of hospitals reporting inpatient_beds in the state for that day.
+
+
+```{r Download Hospital Capacity Data from CDC}
+
+download.file("https://healthdata.gov/api/views/6xf2-c3ie/rows.csv", "COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State.csv")
+
+hospital_capacity_data <-read.csv("COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State.csv")
+
+```
+# Pull in US States map from tigris
+```{r Get U.S. States shapefile using Tigris}
+us_states <- states(cb =TRUE, resolutio ="20m") %>%
+	shift_geometry()
+
+glimpse(us_states)
+
+us_states %>%
+	ggplot() + 
+	geom_sf()
+
+```
+
+## Get the percent of pediatric ICU beds occupied in each state
+
+```{r Pediatric ICU Beds }
+pediatric_icu_data <- hospital_capacity_data  %>%  
+  select(state, staffed_pediatric_icu_bed_occupancy, total_staffed_pediatric_icu_beds) %>%
+  mutate(percent_pediatric_icu_beds_occupied =
+           (staffed_pediatric_icu_bed_occupancy/total_staffed_pediatric_icu_beds)*100) %>%
+  arrange(desc(percent_pediatric_icu_beds_occupied))
+pediatric_icu_data
+```
+
+## Join the pediatric ICU data with the US States map from tigris
+
+```{r join us_states with pediatric_icu data}
+ped_beds_us <- left_join(us_states, pediatric_icu_data, by=c("STUSPS"= "state"))
+
+```
+
+## Map it
+```{r}
+
+pediatric_icu_occupancy_map <- ped_beds_us %>%
+	ggplot() +
+	geom_sf(aes(geometry=geometry, fill = percent_pediatric_icu_beds_occupied), color=NA) +
+        geom_sf_label(aes(label = round(percent_pediatric_icu_beds_occupied,0))) +
+				scale_fill_viridis(direction=-1) +
+				theme_void() +
+	      labs(title="Pediatric ICU Bed Occupancy", caption="Source:CDC")
+
+```
+
+## Save it 
+```{r Save the map}
+save_plot("pediatric_icu_occupancy_map.png", pediatric_icu_occupancy_map, base_height = NULL, base_width = 12)
+
+```
